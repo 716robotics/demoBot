@@ -19,8 +19,10 @@ fn main() {
         pwm.set_prescale(122).unwrap();
         pwm.enable().unwrap();
         loop {
-            for command in r.try_iter(){
-                pwm.set_channel_on_off(int_to_channel(command[0]),0,command[1]).unwrap();
+            println!("t2 heartbeat");
+            match r.try_iter().next(){
+                Some(command) => pwm.set_channel_on_off(int_to_channel(command[0]),0,command[1]).unwrap(),
+                None => ()
             }
         }
         fn int_to_channel(input: u16)->Channel{
