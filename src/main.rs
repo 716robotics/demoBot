@@ -18,12 +18,9 @@ fn main() {
         // Frequency of 50Hz as per Spark documentation
         pwm.set_prescale(122).unwrap();
         pwm.enable().unwrap();
-        let stop = |pwm:&mut pwm_pca9685::Pca9685<linux_embedded_hal::I2cdev>|{
-            println!("------------------\nWatchdog not fed! stopping PWM subsystem\n------------------");
-            pwm.set_channel_full_off(Channel::All).unwrap();
-        };
+        let mut watchdog = Instant::now();
         loop {
-            if r.len() > 15{
+            if r.len() > 35{
                 println!("PWM falling behind, Purging...");
                 for _ in r.try_recv(){}
             }
@@ -33,12 +30,12 @@ fn main() {
                 None => ()
             }
             match wdr.try_iter().last(){
-                Some(watchdog) => {
-                    if watchdog.elapsed().as_millis() > 1000 {
-                        stop(&mut pwm);
-                    }
-                }
-                None => stop(&mut pwm)
+                Some(wd) => watchdog = wd,
+                None => ()
+            }
+            if watchdog.elapsed().as_millis()>2000{
+                println!("------------------\nWatchdog not fed! stopping PWM subsystem\n------------------");
+                pwm.set_channel_full_off(Channel::All).unwrap();
             }
         }
 
@@ -71,13 +68,12 @@ fn main() {
             match ev.event {
                 EventType::AxisChanged(axs,val,_) => {
                     match axs{
-                        Axis::RightStickY|Axis::RightStickX => johnny5.drive(axs,val),
-                        Axis::RightZ => trigger = val,
+                        Axis::LeftStickY|Axis::LeftStickX => johnny5.drive(axs,val),
                         _ => (),
                     }
                 }
-                EventType::ButtonChanged(Button::North,v,_) => {
-                    println!("button press");
+                EventType::ButtonChanged(Button::South,v,_) => {
+                    trigger = v;
                 }
                 _ => (),
             }
@@ -110,16 +106,15 @@ struct Robot{
 }
 impl Robot{
     fn shoot(&mut self,trigger: f32){
-        println!("shoot function called");
         if trigger >= 0.8{
             if !self.shooting{
                 self.shooting = true;
-                self.shoot_wheel.set(1.0);
+                self.shoot_wheel.set(-1.0);
                 self.shoot_timer = Instant::now();
             }
             if self.shoot_timer.elapsed().as_millis() > 2000{
-                //using millis so it triggers exactly after 2s
-                self.feed_wheel.set(1.0);
+                self.feed_wheel.set(-1.0);
+                self.shoot_wheel.set(-1.0);
             }
         }
         else {
@@ -132,8 +127,8 @@ impl Robot{
     }
     fn drive(&mut self,axis: gilrs::Axis, value: f32){
         match axis{
-            Axis::RightStickX => self.thr[0] = value,
-            Axis::RightStickY => self.thr[1] = value,
+            Axis::LeftStickX => self.thr[0] = value,
+            Axis::LeftStickY => self.thr[1] = value,
             _ => ()
         }
         self.l_drive.set(self.thr[1]+self.thr[0]);
