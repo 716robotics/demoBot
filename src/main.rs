@@ -2,14 +2,13 @@ use crossbeam_channel::unbounded;
 use linux_embedded_hal::I2cdev;
 use pwm_pca9685::{Address, Channel, Pca9685};
 use std::{thread, time::Duration, vec, time::Instant};
-use gilrs::{Gilrs, Button, Event, Axis};
+use gilrs::{Gilrs, Button, Event, Axis, EventType};
 fn main() {
     let (s, r) = unbounded();
     let mut gilrs = Gilrs::new().unwrap();
-    let (_id,controller) = gilrs.gamepads().next().unwrap();
     let mut johnny5 = Robot {l_drive: Motor{channel:0, sender:s.clone()},r_drive: Motor {channel:1, sender:s.clone()},
         shoot_wheel: Motor{channel:2, sender:s.clone()}, feed_wheel: Motor{channel:3, sender:s.clone()},
-        shoot_timer: Instant::now(), shooting: false};
+        shoot_timer: Instant::now(), shooting: false, thr:vec!(0.0,0.0)};
     //spawn PWM handler
     thread::spawn(move || {
         let dev = I2cdev::new("/dev/i2c-1").unwrap();
@@ -19,9 +18,10 @@ fn main() {
         pwm.set_prescale(122).unwrap();
         pwm.enable().unwrap();
         loop {
-            println!("t2 heartbeat");
             match r.try_iter().next(){
-                Some(command) => pwm.set_channel_on_off(int_to_channel(command[0]),0,command[1]).unwrap(),
+                Some(command) => {pwm.set_channel_on_off(int_to_channel(command[0]),0,command[1]).unwrap();
+                println!("Got command: {:?}",&command);
+                },
                 None => ()
             }
         }
@@ -46,19 +46,21 @@ fn main() {
             }
         }
     });
-    //arcade drive
-    loop{
-        if controller.is_connected(){
-            johnny5.l_drive.set(controller.value(Axis::RightStickY)+controller.value(Axis::RightStickY));
-            johnny5.r_drive.set(controller.value(Axis::RightStickY)-controller.value(Axis::RightStickY));
-            johnny5.shoot(controller.value(Axis::RightZ));
-        }
-        else {
-            johnny5.l_drive.set(0.0);
-            johnny5.r_drive.set(0.0);
-            johnny5.shoot_wheel.set(0.0);
-            johnny5.feed_wheel.set(0.0);
-            panic!("Controller disconnected!")
+    loop {
+        while let Some(ev) = gilrs.next_event() {  
+            match ev.event {
+                EventType::AxisChanged(axs,val,_) => {
+                    match axs{
+                        Axis::RightStickY|Axis::RightStickX => johnny5.drive(axs,val),
+                        Axis::RightZ => johnny5.shoot(val),
+                        _ => (),
+                    }
+                }
+                EventType::ButtonChanged(Button::North,v,_) => {
+                    println!("button press");
+                }
+                _ => (),
+            }
         }
     }
 
@@ -71,7 +73,9 @@ impl Motor{
     fn set(&self,mut speed:f32){
         if speed.abs() > 1.0 {speed = speed / speed.abs()}
         let output = (speed*0.5+0.5)*205.0+205.0; //transpose from -1:1 to 0:1 then into range 205:409 for PWM
-        self.sender.send(vec!(self.channel,output.floor() as u16)).unwrap();
+        let tmp = vec!(self.channel,output.floor() as u16);
+        //println!("Sending motor command {:?}",&tmp);
+        self.sender.send(tmp).unwrap();
     }
 }
 
@@ -81,7 +85,8 @@ struct Robot{
     shoot_wheel: Motor,
     feed_wheel: Motor,
     shoot_timer: Instant,
-    shooting: bool
+    shooting: bool,
+    thr: Vec<f32>
 }
 impl Robot{
     fn shoot(&mut self,trigger: f32){
@@ -101,5 +106,14 @@ impl Robot{
             }
             self.shoot_timer = Instant::now();
         }
+    }
+    fn drive(&mut self,axis: gilrs::Axis, value: f32){
+        match axis{
+            Axis::RightStickX => self.thr[0] = value,
+            Axis::RightStickY => self.thr[1] = value,
+            _ => ()
+        }
+        self.l_drive.set(self.thr[1]+self.thr[0]);
+        self.r_drive.set(self.thr[1]-self.thr[0]);
     }
 }
