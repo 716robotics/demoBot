@@ -1,14 +1,15 @@
-use crossbeam_channel::unbounded;
+use crossbeam_channel::bounded;
 use linux_embedded_hal::I2cdev;
 use pwm_pca9685::{Address, Channel, Pca9685};
 use std::{thread, time::Duration, vec, time::Instant};
 use gilrs::{Gilrs, Button, Event, Axis, EventType};
 fn main() {
-    let (s, r) = unbounded();
+    let (s, r) = bounded(50);
+    let (wds, wdr):(crossbeam_channel::Sender<Instant>,crossbeam_channel::Receiver<Instant>) = bounded(10);
     let mut gilrs = Gilrs::new().unwrap();
     let mut johnny5 = Robot {l_drive: Motor{channel:0, sender:s.clone()},r_drive: Motor {channel:1, sender:s.clone()},
         shoot_wheel: Motor{channel:2, sender:s.clone()}, feed_wheel: Motor{channel:3, sender:s.clone()},
-        shoot_timer: Instant::now(), shooting: false, thr:vec!(0.0,0.0)};
+        shoot_timer: Instant::now(), shooting: true, thr:vec!(0.0,0.0)};
     //spawn PWM handler
     thread::spawn(move || {
         let dev = I2cdev::new("/dev/i2c-1").unwrap();
@@ -17,14 +18,30 @@ fn main() {
         // Frequency of 50Hz as per Spark documentation
         pwm.set_prescale(122).unwrap();
         pwm.enable().unwrap();
+        let stop = |pwm:&mut pwm_pca9685::Pca9685<linux_embedded_hal::I2cdev>|{
+            println!("------------------\nWatchdog not fed! stopping PWM subsystem\n------------------");
+            pwm.set_channel_full_off(Channel::All).unwrap();
+        };
         loop {
+            if r.len() > 15{
+                println!("PWM falling behind, Purging...");
+                for _ in r.try_recv(){}
+            }
             match r.try_iter().next(){
                 Some(command) => {pwm.set_channel_on_off(int_to_channel(command[0]),0,command[1]).unwrap();
-                println!("Got command: {:?}",&command);
                 },
                 None => ()
             }
+            match wdr.try_iter().last(){
+                Some(watchdog) => {
+                    if watchdog.elapsed().as_millis() > 1000 {
+                        stop(&mut pwm);
+                    }
+                }
+                None => stop(&mut pwm)
+            }
         }
+
         fn int_to_channel(input: u16)->Channel{
             match input{
                 0=>return Channel::C0,
@@ -45,14 +62,17 @@ fn main() {
                 _=>return Channel::C15
             }
         }
+        
     });
+    let mut trigger = 0.0;
     loop {
-        while let Some(ev) = gilrs.next_event() {  
+        while let Some(ev) = gilrs.next_event() {
+            wds.send(Instant::now()).unwrap();
             match ev.event {
                 EventType::AxisChanged(axs,val,_) => {
                     match axs{
                         Axis::RightStickY|Axis::RightStickX => johnny5.drive(axs,val),
-                        Axis::RightZ => johnny5.shoot(val),
+                        Axis::RightZ => trigger = val,
                         _ => (),
                     }
                 }
@@ -62,6 +82,7 @@ fn main() {
                 _ => (),
             }
         }
+        johnny5.shoot(trigger);
     }
 
 }
@@ -74,7 +95,6 @@ impl Motor{
         if speed.abs() > 1.0 {speed = speed / speed.abs()}
         let output = (speed*0.5+0.5)*205.0+205.0; //transpose from -1:1 to 0:1 then into range 205:409 for PWM
         let tmp = vec!(self.channel,output.floor() as u16);
-        //println!("Sending motor command {:?}",&tmp);
         self.sender.send(tmp).unwrap();
     }
 }
@@ -90,9 +110,13 @@ struct Robot{
 }
 impl Robot{
     fn shoot(&mut self,trigger: f32){
-        if trigger > 0.8{
-            self.shooting = true;
-            self.shoot_wheel.set(1.0);
+        println!("shoot function called");
+        if trigger >= 0.8{
+            if !self.shooting{
+                self.shooting = true;
+                self.shoot_wheel.set(1.0);
+                self.shoot_timer = Instant::now();
+            }
             if self.shoot_timer.elapsed().as_millis() > 2000{
                 //using millis so it triggers exactly after 2s
                 self.feed_wheel.set(1.0);
@@ -100,11 +124,10 @@ impl Robot{
         }
         else {
             if self.shooting{
-            self.feed_wheel.set(0.0);
-            self.shoot_wheel.set(0.0);
-            self.shooting = false;
+                self.feed_wheel.set(0.0);
+                self.shoot_wheel.set(0.0);
             }
-            self.shoot_timer = Instant::now();
+            self.shooting = false;
         }
     }
     fn drive(&mut self,axis: gilrs::Axis, value: f32){
