@@ -22,18 +22,17 @@ fn main() {
         let mut estop = false;
         loop {
             if r.len() > 35{
-                println!("PWM falling behind, Purging...");
-                for _ in r.try_recv(){}
+                //println!("PWM falling behind, Purging...");
+                let _a:Vec<_>=r.try_iter().collect();
+                drop(_a);
             }
+
             match r.try_iter().next(){
                 Some(command) => {
-                    match command[0]{
-                        65535 => estop = command[1] != 0,
-                        _ => {
-                            if estop {pwm.set_channel_full_off(Channel::All).unwrap();}
-                            else {pwm.set_channel_on_off(int_to_channel(command[0]),0,command[1]).unwrap()}
-                        }
-                    }
+                    if command[0] == 65535 {estop = command[1] == 0;}
+                    if estop {pwm.set_channel_full_off(Channel::All).unwrap();
+                    println!("Controller disconnected, E-stopped.")}
+                    else {pwm.set_channel_on_off(int_to_channel(command[0]),0,command[1]).unwrap()}
                 },
                 None => ()
             }
@@ -42,7 +41,6 @@ fn main() {
                 None => ()
             }
             if watchdog.elapsed().as_millis()>2500{
-                println!("Watchdog not fed, stopping motors");
                 pwm.set_channel_full_off(Channel::C0).unwrap();
                 pwm.set_channel_full_off(Channel::C1).unwrap();
             }
@@ -81,10 +79,16 @@ fn main() {
                         _ => (),
                     }
                 }
-                EventType::ButtonChanged(Button::South,v,_) => {
-                    trigger = v;
+                EventType::ButtonChanged(bttn,v,_) => {
+                    match bttn{
+                        gilrs::Button::South =>trigger = v,
+                        gilrs::Button::East => s.send(vec!(65535,0)).unwrap(),
+                        gilrs::Button::North => s.send(vec!(65535,1)).unwrap(),
+                        _ => ()
+                    }
                 }
-                EventType::Disconnected => s.send(vec!(65535,0)).unwrap(),
+                EventType::Disconnected => {println!("-------------\nDetected controller disconnect!!");
+                    s.send(vec!(65535,0)).unwrap()},
                 EventType::Connected => s.send(vec!(65535,1)).unwrap(),
                 _ => (),
             }
