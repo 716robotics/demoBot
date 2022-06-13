@@ -1,8 +1,8 @@
 use crossbeam_channel::bounded;
 use linux_embedded_hal::I2cdev;
 use pwm_pca9685::{Address, Channel, Pca9685};
-use std::{thread, time::Duration, vec, time::Instant};
-use gilrs::{Gilrs, Button, Event, Axis, EventType};
+use std::{thread, vec, time::Instant};
+use gilrs::{Gilrs, Button, Axis, EventType};
 fn main() {
     let (s, r) = bounded(50);
     let (wds, wdr):(crossbeam_channel::Sender<Instant>,crossbeam_channel::Receiver<Instant>) = bounded(10);
@@ -81,9 +81,9 @@ fn main() {
                 }
                 EventType::ButtonChanged(bttn,v,_) => {
                     match bttn{
-                        gilrs::Button::South =>trigger = v,
-                        gilrs::Button::East => s.send(vec!(65535,0)).unwrap(),
-                        gilrs::Button::North => s.send(vec!(65535,1)).unwrap(),
+                        Button::South =>trigger = v,
+                        Button::East => s.send(vec!(65535,0)).unwrap(),
+                        Button::North => s.send(vec!(65535,1)).unwrap(),
                         _ => ()
                     }
                 }
