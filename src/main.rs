@@ -47,23 +47,23 @@ fn main() {
         }
 
         fn int_to_channel(input: u16)->Channel{
-            match input{
-                0=>return Channel::C0,
-                1=>return Channel::C1,
-                2=>return Channel::C2,
-                3=>return Channel::C3,
-                4=>return Channel::C4,
-                5=>return Channel::C5,
-                6=>return Channel::C6,
-                7=>return Channel::C7,
-                8=>return Channel::C8,
-                9=>return Channel::C9,
-                10=>return Channel::C10,
-                11=>return Channel::C11,
-                12=>return Channel::C12,
-                13=>return Channel::C13,
-                14=>return Channel::C14,
-                _=>return Channel::C15
+            return match input {
+                0 => Channel::C0,
+                1 => Channel::C1,
+                2 => Channel::C2,
+                3 => Channel::C3,
+                4 => Channel::C4,
+                5 => Channel::C5,
+                6 => Channel::C6,
+                7 => Channel::C7,
+                8 => Channel::C8,
+                9 => Channel::C9,
+                10 => Channel::C10,
+                11 => Channel::C11,
+                12 => Channel::C12,
+                13 => Channel::C13,
+                14 => Channel::C14,
+                _ => Channel::C15
             }
         }
         
@@ -99,7 +99,7 @@ fn main() {
 }
 struct Motor{
     channel: u16,
-    sender: crossbeam_channel::Sender<std::vec::Vec<u16>>
+    sender: crossbeam_channel::Sender<Vec<u16>>
 }
 impl Motor{
     fn set(&self,mut speed:f32){
@@ -140,7 +140,7 @@ impl Robot{
             self.shooting = false;
         }
     }
-    fn drive(&mut self,axis: gilrs::Axis, value: f32){
+    fn drive(&mut self,axis: Axis, value: f32){
         match axis{
             Axis::LeftStickX => self.thr[0] = value,
             Axis::LeftStickY => self.thr[1] = value,
