@@ -82,6 +82,7 @@ fn main() {
                 EventType::ButtonChanged(bttn,v,_) => {
                     match bttn{
                         Button::South =>trigger = v,
+                        Button::West => trigger = v * 0.6,
                         Button::East => s.send(vec!(65535,0)).unwrap(),
                         Button::North => s.send(vec!(65535,1)).unwrap(),
                         _ => ()
