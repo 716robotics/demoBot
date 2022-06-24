@@ -122,15 +122,15 @@ struct Robot{
 }
 impl Robot{
     fn shoot(&mut self,trigger: f32){
-        if trigger !=0{
+        if trigger != 0.0{
             if !self.shooting{
                 self.shooting = true;
-                self.shoot_wheel.set(-1*trigger);
+                self.shoot_wheel.set(-trigger);
                 self.shoot_timer = Instant::now();
             }
             if self.shoot_timer.elapsed().as_millis() > 2000{
                 self.feed_wheel.set(-1.0);
-                self.shoot_wheel.set(-1*trigger);
+                self.shoot_wheel.set(-trigger);
             }
         }
         else {
