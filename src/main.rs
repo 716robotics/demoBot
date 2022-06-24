@@ -81,8 +81,9 @@ fn main() {
                 }
                 EventType::ButtonChanged(bttn,v,_) => {
                     match bttn{
-                        Button::South =>trigger = v,
-                        Button::West => trigger = v * 0.6,
+                        Button::RightTrigger => trigger = v,
+                        Button::South =>trigger = v * 0.35, // A button
+                        Button::West => trigger = v * 0.2, // Y button
                         Button::East => s.send(vec!(65535,0)).unwrap(),
                         Button::North => s.send(vec!(65535,1)).unwrap(),
                         _ => ()
@@ -128,9 +129,17 @@ impl Robot{
                 self.shoot_wheel.set(-trigger);
                 self.shoot_timer = Instant::now();
             }
-            if self.shoot_timer.elapsed().as_millis() > 2000{
-                self.feed_wheel.set(-1.0);
-                self.shoot_wheel.set(-trigger);
+            if trigger == 1.0 {
+                if self.shoot_timer.elapsed().as_millis() > 4000 {
+                    self.feed_wheel.set(-1.0);
+                    self.shoot_wheel.set(-trigger);
+                }
+            }
+            else{
+                if self.shoot_timer.elapsed().as_millis() > 2000 {
+                    self.feed_wheel.set(-1.0);
+                    self.shoot_wheel.set(-trigger);
+                }
             }
         }
         else {
